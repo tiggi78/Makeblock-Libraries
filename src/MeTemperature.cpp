@@ -170,10 +170,10 @@ float MeTemperature::temperature(void)
 {
   byte  i;
   byte  present = 0;
-  byte  type_s;
+  //byte  type_s;
   byte  data[12];
-  byte	addr[8];
-  float celsius;
+  //byte	addr[8];
+  //float celsius;
   long  time;
 
   _ts.reset();

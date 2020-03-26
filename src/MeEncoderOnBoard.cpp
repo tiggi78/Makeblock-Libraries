@@ -805,9 +805,9 @@ void MeEncoderOnBoard::setMotionMode(int16_t motionMode)
  */
 int16_t MeEncoderOnBoard::pidPositionToPwm(void)
 {
-  float cur_pos = 0;
+  //float cur_pos = 0;
   float seek_speed = 0;
-  float seek_temp = 0;
+  //float seek_temp = 0;
   float pos_error = 0;
   float speed_error = 0;
   float d_component = 0;
