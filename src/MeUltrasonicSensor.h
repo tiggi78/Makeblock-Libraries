@@ -121,7 +121,7 @@ public:
  * \par Description
  *   Centimeters return the distance
  * \param[in]
- *   MAXcm - The Max centimeters can be measured, the default value is 400.
+ *   triggerNew - Trigger new measure and waits it, otherwise get latest measured value
  * \par Output
  *   None
  * \return
@@ -129,7 +129,7 @@ public:
  * \par Others
  *   None
  */
-  double distanceCm(uint16_t = 400);
+  double distanceCm( bool triggerNew = true);
 
 /**
  * \par Function
@@ -163,11 +163,28 @@ public:
  *   None
  */
   long measure(unsigned long = 30000);
-private:
-  volatile uint8_t  _SignalPin;
-  volatile bool _measureFlag;
+/* 
+ * Trigger measure by pulsing pin
+ *  
+ */
+  void trigger();
+
+  private:
+  static void measurePulse(void *userdata, bool pinstate);
+  /* Minimum time between two consecutive measures
+   * 
+   * min distance: 0.03 m -> 176   us (time to go and return)
+   * max distanve  4 m    -> 23530 us
+   * So minumum measure time is 24 ms  
+  */
+  static const uint16_t MIN_MEAS_TIME = 100;
+  /* Timeout to wait for a measure*/
+  static const uint16_t ULTRA_TIMEOUT = 30;
+
+  volatile uint8_t _SignalPin;
   volatile long _lastEnterTime;
-  volatile float _measureValue;
+  volatile long _measureValue;
+  volatile long _impulseStart;
 };
 
 #endif 

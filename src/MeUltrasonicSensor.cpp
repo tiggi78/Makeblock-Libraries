@@ -43,6 +43,8 @@
  * @example UltrasonicSensorTest.ino
  */
 #include "MeUltrasonicSensor.h"
+#include "YetAnotherPcInt.h"
+#include <util/atomic.h>
 
 #ifdef ME_PORT_DEFINED
 /**
@@ -53,7 +55,8 @@
  */
 MeUltrasonicSensor::MeUltrasonicSensor(void) : MePort(0)
 {
-
+  _lastEnterTime = 0;
+  _measureValue = 0;
 }
 
 /**
@@ -63,6 +66,10 @@ MeUltrasonicSensor::MeUltrasonicSensor(void) : MePort(0)
  */
 MeUltrasonicSensor::MeUltrasonicSensor(uint8_t port) : MePort(port)
 {
+  _lastEnterTime = 0 ;
+  _measureValue = 0;
+  _SignalPin = s2;
+  PcInt::attachInterrupt( _SignalPin, measurePulse, this );
 
 }
 #else // ME_PORT_DEFINED
@@ -76,8 +83,8 @@ MeUltrasonicSensor::MeUltrasonicSensor(uint8_t port)
 {
   _SignalPin = port;
   _lastEnterTime = millis();
-  _measureFlag = true;
   _measureValue = 0;
+  
 }
 #endif // ME_PORT_DEFINED
 
@@ -97,13 +104,14 @@ MeUltrasonicSensor::MeUltrasonicSensor(uint8_t port)
  */
 void MeUltrasonicSensor::setpin(uint8_t SignalPin)
 {
+  PcInt::detachInterrupt( _SignalPin );
   _SignalPin = SignalPin;
-  _lastEnterTime = millis();
-  _measureFlag = true;
+  _lastEnterTime = 0;
   _measureValue = 0;
 #ifdef ME_PORT_DEFINED
   s2 = _SignalPin;
 #endif // ME_PORT_DEFINED
+  PcInt::attachInterrupt( _SignalPin, measurePulse, this );
 }
 
 /**
@@ -120,17 +128,37 @@ void MeUltrasonicSensor::setpin(uint8_t SignalPin)
  * \par Others
  *   None
  */
-double MeUltrasonicSensor::distanceCm(uint16_t MAXcm)
+double MeUltrasonicSensor::distanceCm( bool triggerNew )
 {
-  long distance = measure();
-
-  if((((double)distance / 58.0) >= 400.0) || (distance == 0))
+  double distance = 0.0;
+  /* Get sound TOF (Time of Flight)*/
+  if( triggerNew )
   {
-    return( (double)400.0);//MAXcm
+    distance = (double)measure();
   }
   else
   {
-    return( (double)distance / 58.0);
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+    {
+      distance = _measureValue;
+    }
+  }
+  /*
+   * Soundspeed 346 m/s  (air, 25 deg C)
+   * 2*distance [m] = 346 [m/s] * time [s]
+   * distance [cm] = (346 [m/s] * time [us] / 2) / 10e6 [s to us] * 10e2 [m to cm] = 
+   * = time [us] * 346 / 20000 = time [us] / 57.8 
+   *  
+  */
+  distance /= 58.0;
+  
+  if( ( distance >= 400.0 ) || ( distance == 0.0 ) )
+  {
+    return 400.0;
+  }
+  else
+  {
+    return distance;
   }
 }
 
@@ -151,7 +179,6 @@ double MeUltrasonicSensor::distanceCm(uint16_t MAXcm)
 double MeUltrasonicSensor::distanceInch(uint16_t MAXinch)
 {
   long distance = measure();
-
   if((((double)distance / 148.0) >= 400.0) || (distance == 0))
   {
     return( (double)180.0);//MAXinch
@@ -179,29 +206,78 @@ double MeUltrasonicSensor::distanceInch(uint16_t MAXinch)
  */
 long MeUltrasonicSensor::measure(unsigned long timeout)
 {
-  long duration;
-  if(millis() - _lastEnterTime > 23)
+  unsigned long duration = 0;
+  trigger();
+  /* pulseIn should have interrupt disabled, otherwise interrupts (e.g TIMER0) make pulseIn
+   * mesure less than real impulse
+   */
+  /*
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
-    _measureFlag = true; 
-  }
-
-  if(_measureFlag == true)
-  {
-    _lastEnterTime = millis();
-    _measureFlag = false;
-    MePort::dWrite2(LOW);
-    delayMicroseconds(2);
-    MePort::dWrite2(HIGH);
-    delayMicroseconds(10);
-    MePort::dWrite2(LOW);
-    pinMode(s2, INPUT);
-    duration = pulseIn(s2, HIGH);
-    _measureValue = duration;
-  }
-  else
+    unsigned long duration = pulseIn( s2, HIGH, timeout);
+  }    
+  */
+  /* Ultrasonic sensors has a timeout of 30 ms if it cannot measure the distance.
+   * Wait for the measurement to be taken by PCINT interrupts */
+  delay( ULTRA_TIMEOUT );
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
   {
     duration = _measureValue;
-  }
-  return(duration);
+  }    
+   
+  return duration;
 }
 
+/* 
+ * Trigger measure by pulsing pin
+ */
+void MeUltrasonicSensor::trigger()
+{
+  /* Do not trigger if previos measure isn't finished */
+  if(millis() - _lastEnterTime > MIN_MEAS_TIME)
+  {
+    volatile uint8_t * pcmsk = digitalPinToPCMSK(_SignalPin);
+    uint8_t portBit = digitalPinToPCMSKbit(_SignalPin);
+    uint8_t portBitMask = _BV(portBit);
+
+      _lastEnterTime = millis();
+    /* Disable PCINT interrupt otherwise it will measure following pulse. */
+    *pcmsk &= ~portBitMask;
+    //PcInt::detachInterrupt( _SignalPin);
+    dWrite2(LOW);
+    //delayMicroseconds(2);
+    dWrite2(HIGH);
+    delayMicroseconds(10);
+    dWrite2(LOW);
+    pinMode(_SignalPin, INPUT);
+
+    /* re-enable PCINT interrupt to measure the pulse. */
+    *pcmsk |= portBitMask;
+
+    //PcInt::attachInterrupt( _SignalPin, measurePulse, this );
+  }
+}
+
+void MeUltrasonicSensor::measurePulse(void *userdata, bool pinstate)
+{
+    unsigned long currentTime = micros();
+    
+    MeUltrasonicSensor* sensor = static_cast<MeUltrasonicSensor*>(userdata);
+    /* RISING edge: start of ultrasonic impulse*/
+    if( pinstate )
+    {
+      sensor->_impulseStart = currentTime;
+    }
+    /* RISING edge: echo received*/
+    if( !pinstate )
+    {
+      if( currentTime < sensor->_impulseStart ) /* check if micros() timer overflowed */
+      {
+          sensor->_measureValue = currentTime + ( UINT32_MAX - sensor->_impulseStart );
+      }
+      else
+      {
+          sensor->_measureValue = currentTime - sensor->_impulseStart;
+      }
+    }
+}
