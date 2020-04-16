@@ -271,13 +271,6 @@ void MeUltrasonicSensor::measurePulse(void *userdata, bool pinstate)
     /* RISING edge: echo received*/
     if( !pinstate )
     {
-      if( currentTime < sensor->_impulseStart ) /* check if micros() timer overflowed */
-      {
-          sensor->_measureValue = currentTime + ( UINT32_MAX - sensor->_impulseStart );
-      }
-      else
-      {
-          sensor->_measureValue = currentTime - sensor->_impulseStart;
-      }
+      sensor->_measureValue = currentTime - sensor->_impulseStart;
     }
 }
