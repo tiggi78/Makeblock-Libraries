@@ -231,6 +231,12 @@ long MeUltrasonicSensor::measure(unsigned long timeout)
 /* 
  * Trigger measure by pulsing pin
  */
+void MeUltrasonicSensor::triggerTask ( void* arg )
+ {
+    MeUltrasonicSensor* sensor = static_cast<MeUltrasonicSensor*>(arg);
+    sensor->trigger();
+ }
+
 void MeUltrasonicSensor::trigger()
 {
   /* Do not trigger if previos measure isn't finished */

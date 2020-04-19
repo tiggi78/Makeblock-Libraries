@@ -168,6 +168,8 @@ public:
  *  
  */
   void trigger();
+  /* static trigger with class passed as argument */
+  static void triggerTask (void* arg);
 
   private:
   static void measurePulse(void *userdata, bool pinstate);
