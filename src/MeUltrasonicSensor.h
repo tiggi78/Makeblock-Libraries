@@ -183,10 +183,30 @@ public:
   /* Timeout to wait for a measure*/
   static const uint16_t ULTRA_TIMEOUT = 30;
 
-  volatile uint8_t _SignalPin;
   volatile long _lastEnterTime;
   volatile long _measureValue;
   volatile long _impulseStart;
+
+  volatile uint8_t _SignalPin;
+  volatile uint8_t* _pcmskSignalPin;
+  
+  uint8_t _portBitMaskSignalPin;
+  volatile uint8_t* _regSignalPin;
+  volatile uint8_t* _outSignalPin;
+  uint8_t _bitSignalPin; 
+  
+  /* LOW  *out &= ~bit;
+   * HIGH *out |= bit;
+  */
+
+  /* INPUT
+  *reg &= ~bit;
+  */
+  
+  /* OUTPUT
+  *reg |= bit;
+  */
+    
 };
 
 #endif 

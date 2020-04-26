@@ -69,6 +69,15 @@ MeUltrasonicSensor::MeUltrasonicSensor(uint8_t port) : MePort(port)
   _lastEnterTime = 0 ;
   _measureValue = 0;
   _SignalPin = s2;
+  _pcmskSignalPin = digitalPinToPCMSK(_SignalPin);
+  uint8_t portBit = digitalPinToPCMSKbit(_SignalPin);
+  _portBitMaskSignalPin = _BV(portBit);
+  
+  _bitSignalPin = digitalPinToBitMask(_SignalPin);
+  uint8_t portPin = digitalPinToPort(_SignalPin);
+  _regSignalPin = portModeRegister(portPin);
+  _outSignalPin = portOutputRegister(portPin);
+  
   PcInt::attachInterrupt( _SignalPin, measurePulse, this );
 
 }
@@ -106,6 +115,14 @@ void MeUltrasonicSensor::setpin(uint8_t SignalPin)
 {
   PcInt::detachInterrupt( _SignalPin );
   _SignalPin = SignalPin;
+  _pcmskSignalPin = digitalPinToPCMSK(_SignalPin);
+  uint8_t portBit = digitalPinToPCMSKbit(_SignalPin);
+  _portBitMaskSignalPin = _BV(portBit);
+  _bitSignalPin = digitalPinToBitMask(_SignalPin);
+  uint8_t port = digitalPinToPort(_SignalPin);
+  _regSignalPin = portModeRegister(port);
+  _outSignalPin = portOutputRegister(port);
+  
   _lastEnterTime = 0;
   _measureValue = 0;
 #ifdef ME_PORT_DEFINED
@@ -228,6 +245,8 @@ long MeUltrasonicSensor::measure(unsigned long timeout)
   return duration;
 }
 
+#pragma GCC push_options
+#pragma GCC optimize ("-O3")
 /* 
  * Trigger measure by pulsing pin
  */
@@ -240,25 +259,31 @@ void MeUltrasonicSensor::triggerTask ( void* arg )
 void MeUltrasonicSensor::trigger()
 {
   /* Do not trigger if previos measure isn't finished */
-  if(millis() - _lastEnterTime > MIN_MEAS_TIME)
+    uint32_t elapsed = millis();
+    if( ( elapsed - _lastEnterTime ) > MIN_MEAS_TIME)
   {
-    volatile uint8_t * pcmsk = digitalPinToPCMSK(_SignalPin);
-    uint8_t portBit = digitalPinToPCMSKbit(_SignalPin);
-    uint8_t portBitMask = _BV(portBit);
-
-      _lastEnterTime = millis();
+    _lastEnterTime = elapsed;
     /* Disable PCINT interrupt otherwise it will measure following pulse. */
-    *pcmsk &= ~portBitMask;
-    //PcInt::detachInterrupt( _SignalPin);
-    dWrite2(LOW);
-    //delayMicroseconds(2);
-    dWrite2(HIGH);
+    *_pcmskSignalPin &= ~_portBitMaskSignalPin;
+    
+    //pinMode(_SignalPin, OUTPUT);  
+    *_regSignalPin |= _bitSignalPin;
+ 
+    //digitalWrite(_SignalPin, LOW);
+    *_outSignalPin &= ~_bitSignalPin;
+
+    //digitalWrite(_SignalPin, HIGH);
+    *_outSignalPin |= _bitSignalPin;
+   
     delayMicroseconds(10);
-    dWrite2(LOW);
-    pinMode(_SignalPin, INPUT);
+    //digitalWrite(_SignalPin, LOW);
+    *_outSignalPin &= ~_bitSignalPin;
+
+    //pinMode(_SignalPin, INPUT);
+    *_regSignalPin &= ~_bitSignalPin;
 
     /* re-enable PCINT interrupt to measure the pulse. */
-    *pcmsk |= portBitMask;
+    *_pcmskSignalPin |= _portBitMaskSignalPin;
 
     //PcInt::attachInterrupt( _SignalPin, measurePulse, this );
   }
@@ -280,3 +305,4 @@ void MeUltrasonicSensor::measurePulse(void *userdata, bool pinstate)
       sensor->_measureValue = currentTime - sensor->_impulseStart;
     }
 }
+#pragma GCC pop_options
