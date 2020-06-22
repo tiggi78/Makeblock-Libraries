@@ -275,7 +275,8 @@ void MeUltrasonicSensor::trigger()
     //digitalWrite(_SignalPin, HIGH);
     *_outSignalPin |= _bitSignalPin;
    
-    delayMicroseconds(10);
+    delayMicroseconds(5);
+    
     //digitalWrite(_SignalPin, LOW);
     *_outSignalPin &= ~_bitSignalPin;
 
